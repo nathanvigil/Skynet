@@ -1,0 +1,66 @@
+import numpy as np
+import scipy as sp
+import scipy.integrate
+import matplotlib.pyplot as plt
+
+Lambda = 1e-4 # Generation time in seconds
+beta_i = np.array([0.000215, 0.001424, 0.001274, 0.002568, 0.000748, 0.000273]) # Delayed neutron fractions
+lambda_i = np.array([0.0124, 0.0305, 0.111, 0.301, 1.14, 3.01]) # Decay constants for delayed neutron precursors
+beta = np.sum(beta_i) # Total delayed neutron fraction
+
+
+def get_reactivity(t):
+    if t < 5.0:
+        rho = 0
+    elif 5.0 <= t <= 10.0:
+        rho = 0.0002 * (t - 5.0) # Ramp up reactivity
+    else:
+        rho = 0.001 # Step reactivity insertion
+    return rho  
+
+def point_kinetics(t, y):
+    n = y[0]
+    C = y[1:7 ]
+    T = y[7]
+    pwr_n0 = 100 / 1e6  # power per neuton density
+    m = 0.01  # mass of fuel in kg
+    cp = 500  # specific heat capacity in J/kg-K
+    alpha = pwr_n0 / (m * cp)  # Temperature feedback coefficient
+    gamma = 0.0667 # Heat transfer coefficient in W/K
+    T_coolant = 300  # Coolant temperature in K
+    alpha_T = -2.0e-5  # Temperature reactivity feedback coefficient in 1/K
+    T0 = 600  # Initial fuel temperature in K
+    rho = get_reactivity(t)
+    rho_total = rho + alpha_T * (T - T0)  # Total reactivity including temperature feedback
+    
+    dn_dt = (rho_total - beta) / Lambda * n + np.sum(lambda_i * C)
+    dC_dt = (beta_i /Lambda) * n - lambda_i * C
+    dT_dt = (alpha * n) - (gamma * (T - T_coolant))
+    return np.concatenate(([dn_dt], dC_dt, [dT_dt]))
+
+
+                           
+
+
+n0 = 1e6  # Initial neutron density
+C0 = (beta_i / (Lambda * lambda_i)) * n0  # Initial precursor concentration
+T0_initial = 600  # Initial fuel temperature in K
+y0 = np.append(n0, C0)
+y0 = np.append(y0, T0_initial)
+sol = sp.integrate.solve_ivp(point_kinetics, [0, 50], y0, t_eval=np.linspace(0, 50, 1000))
+
+
+fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+                               
+ax1.plot(sol.t, sol.y[0], label='Neutron Density')
+ax1.set_xlabel('Time (s)')
+ax1.set_ylabel('Neutron Density')
+ax1.legend()
+
+ax2.plot(sol.t, sol.y[7], label='Fuel Temperature', color='orange')
+ax2.set_xlabel('Time (s)')
+ax2.set_ylabel('Fuel Temperature (K)')
+ax2.legend()
+plt.suptitle('1D Point Kinetics with Temperature Feedback')
+plt.tight_layout()
+plt.show()
